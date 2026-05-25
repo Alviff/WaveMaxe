@@ -1,0 +1,6 @@
+{
+  "name": "PulseWave",
+  "description": "A futuristic music player integrating online/offline streaming, dynamic customizable audio visualizers, neural equalizer, and Gemini-powered smart playlist recommendations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
