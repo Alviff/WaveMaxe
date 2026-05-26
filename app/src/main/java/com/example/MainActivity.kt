@@ -75,6 +75,13 @@ fun MainContainer() {
     val copilotPrompt by viewModel.copilotPrompt.collectAsState()
     val copilotResponse by viewModel.copilotResponse.collectAsState()
     val isCopilotThinking by viewModel.isCopilotThinking.collectAsState()
+    val selectedTheme by viewModel.selectedTheme.collectAsState()
+    val fineTuneTempo by viewModel.fineTuneTempo.collectAsState()
+    val fineTuneGenre by viewModel.fineTuneGenre.collectAsState()
+    val isAdventurous by viewModel.isAdventurous.collectAsState()
+    val likedSongIdsList by viewModel.likedSongIds.collectAsState()
+    val recentlyPlayedList by viewModel.recentlyPlayed.collectAsState()
+    val allSongsList by viewModel.songsFlow.collectAsState()
 
     val isExporting by viewModel.isExportingVideo.collectAsState()
     val exportProgress by viewModel.exportVideoProgress.collectAsState()
@@ -315,13 +322,26 @@ fun MainContainer() {
                     }
 
                     "Copilot" -> {
+                        val likedPlaylistSongs = remember(allSongsList, likedSongIdsList) {
+                            allSongsList.filter { likedSongIdsList.contains(it.id) }
+                        }
                         AICopilotScreen(
                             prompt = copilotPrompt,
                             response = copilotResponse,
                             isThinking = isCopilotThinking,
-                            availableSongs = viewModel.songs,
+                            availableSongs = allSongsList,
+                            likedSongs = likedPlaylistSongs,
+                            recentlyPlayed = recentlyPlayedList,
+                            selectedTheme = selectedTheme,
+                            fineTuneTempo = fineTuneTempo,
+                            fineTuneGenre = fineTuneGenre,
+                            isAdventurous = isAdventurous,
                             onPromptChange = { viewModel.setCopilotPrompt(it) },
                             onSubmitPrompt = { viewModel.askCopilot() },
+                            onSelectTheme = { viewModel.setSelectedTheme(it) },
+                            onTempoChange = { viewModel.setFineTuneTempo(it) },
+                            onGenreChange = { viewModel.setFineTuneGenre(it) },
+                            onAdventurousChange = { viewModel.setAdventurous(it) },
                             onLoadAIPlaylist = { title, recommendedSongs, style ->
                                 // Construct interactive quick playlist
                                 viewModel.createPlaylist(title, "Neuro-copilot AI synthesized wave models")

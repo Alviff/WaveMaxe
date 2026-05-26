@@ -132,6 +132,18 @@ class PulseWaveViewModel(application: Application) : AndroidViewModel(applicatio
     private val _isCopilotThinking = MutableStateFlow(false)
     val isCopilotThinking: StateFlow<Boolean> = _isCopilotThinking.asStateFlow()
 
+    private val _selectedTheme = MutableStateFlow<String?>(null)
+    val selectedTheme: StateFlow<String?> = _selectedTheme.asStateFlow()
+
+    private val _fineTuneTempo = MutableStateFlow("All")
+    val fineTuneTempo: StateFlow<String> = _fineTuneTempo.asStateFlow()
+
+    private val _fineTuneGenre = MutableStateFlow("All")
+    val fineTuneGenre: StateFlow<String> = _fineTuneGenre.asStateFlow()
+
+    private val _isAdventurous = MutableStateFlow(false)
+    val isAdventurous: StateFlow<Boolean> = _isAdventurous.asStateFlow()
+
     // Export Video Simulation Panel States
     private val _isExportingVideo = MutableStateFlow(false)
     val isExportingVideo: StateFlow<Boolean> = _isExportingVideo.asStateFlow()
@@ -617,13 +629,41 @@ class PulseWaveViewModel(application: Application) : AndroidViewModel(applicatio
         _copilotPrompt.value = prompt
     }
 
+    fun setSelectedTheme(theme: String?) {
+        _selectedTheme.value = theme
+    }
+
+    fun setFineTuneTempo(tempo: String) {
+        _fineTuneTempo.value = tempo
+    }
+
+    fun setFineTuneGenre(genre: String) {
+        _fineTuneGenre.value = genre
+    }
+
+    fun setAdventurous(enabled: Boolean) {
+        _isAdventurous.value = enabled
+    }
+
     fun askCopilot() {
-        if (_copilotPrompt.value.isBlank()) return
         _isCopilotThinking.value = true
         _copilotResponse.value = null
         
         viewModelScope.launch {
-            val response = copilotService.generatePlaylistRecommendations(_copilotPrompt.value, songs)
+            val allSongs = songsFlow.value
+            val likedSongsList = allSongs.filter { likedSongIds.value.contains(it.id) }
+            val recentPlayList = recentlyPlayed.value
+
+            val response = copilotService.generatePlaylistRecommendations(
+                userPrompt = _copilotPrompt.value,
+                availableSongs = allSongs,
+                likedSongs = likedSongsList,
+                recentlyPlayed = recentPlayList,
+                selectedTheme = _selectedTheme.value,
+                prefGenre = _fineTuneGenre.value,
+                tempoFilter = _fineTuneTempo.value,
+                isAdventurous = _isAdventurous.value
+            )
             _copilotResponse.value = response
             _isCopilotThinking.value = false
             

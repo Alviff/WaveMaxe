@@ -30,21 +30,38 @@ class AICopilotService {
 
     suspend fun generatePlaylistRecommendations(
         userPrompt: String,
-        availableSongs: List<Song>
+        availableSongs: List<Song>,
+        likedSongs: List<Song> = emptyList(),
+        recentlyPlayed: List<Song> = emptyList(),
+        selectedTheme: String? = null,
+        prefGenre: String? = null,
+        tempoFilter: String? = null, // "Slow", "Medium", "Fast", "All"
+        isAdventurous: Boolean = false
     ): AIDeclaredPlaylistResponse = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
         
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
             Log.w("AICopilotService", "Gemini API Key is placeholder/empty; falling back to offline mood maps.")
-            return@withContext getOfflineFallbackRecommendation(userPrompt, availableSongs)
+            return@withContext getOfflineFallbackRecommendation(
+                userPrompt, availableSongs, likedSongs, recentlyPlayed, selectedTheme, prefGenre, tempoFilter, isAdventurous
+            )
+        }
+
+        val basePromptStr = if (userPrompt.isNotBlank()) userPrompt else {
+            when (selectedTheme) {
+                "workout" -> "High BPM workout pump soundtrack"
+                "chill" -> "Serene atmospheric slow space drift chillout"
+                "focus" -> "Deep cyberdeck focusing ambient melodies"
+                else -> "Perfect vibe synthesis"
+            }
         }
 
         val systemPrompt = """
             You are "Neuro-Copilot", the sentient organic-cyber intelligence powering the PulseWave futuristic music player.
-            Your role is to analyze the user's music mood prompt and curate a custom playlist from the available songs.
+            Your role is to analyze the user's music mood prompt/theme, incorporate their current taste signature, and curate a custom playlist from the available songs.
             You must return a valid JSON object matching this schema exactly:
             {
-               "commentary": "Immersive cyberpunk narrative explaining the mood match. Use sci-fi terminology (e.g., neural ports, cybergrid, terminal vectors). Be expressive and cool.",
+               "commentary": "Immersive cyberpunk narrative explaining the mood match. Use sci-fi terminology (e.g., neural ports, cybergrid, terminal vectors). Mention their user taste signature (favorites/recents) if relevant. Be expressive and cool.",
                "recommendedSongIds": ["pulsewave_01", "pulsewave_03"],
                "aiPlaylistTitle": "Cybergrid Override",
                "recommendedVisualizerStyle": "Circular Wave"
@@ -53,8 +70,23 @@ class AICopilotService {
             Available Songs in the PulseWave Database:
             ${availableSongs.joinToString("\n") { "- ID: ${it.id}, Title: '${it.title}', Artist: '${it.artist}', Genre: '${it.genre}', Primary Mood: '${it.mood}', BPM: ${it.bpm}" }}
             
-            Match the user mood as close as possible. Choose 1 to 4 songs from the list in recommendedSongIds.
-            Return ONLY raw JSON, do NOT wrap it in markdown block tags of any kind.
+            User's Current Taste Signature:
+            ${if (likedSongs.isNotEmpty()) "- Liked Tracks Space: ${likedSongs.joinToString(", ") { "'${it.title}' (${it.genre})" }}" else "- Liked Tracks Space: [None registered yet]"}
+            ${if (recentlyPlayed.isNotEmpty()) "- Synaptic Memory (Recent Tracks): ${recentlyPlayed.joinToString(", ") { "'${it.title}'" }}" else "- Synaptic Memory (Recent Tracks): [Memory buffer clear]"}
+            
+            Selected Theme Preset: ${selectedTheme ?: "None"}
+            Preferred Genre Filter: ${prefGenre ?: "Any"}
+            Tempo Constraint: ${tempoFilter ?: "Any"}
+            Cybernetic Adventure Level: ${if (isAdventurous) "High (introduce unexpected genre shifts)" else "Strict (precision matching)"}
+
+            MATCH INSTRUCTIONS:
+            1. Formulate a curated playlist (1 to 5 songs) drawing from the database matching the criteria.
+            2. If Tempo Constraint is "Slow", filter/prioritize songs with BPM < 100.
+               If "Medium", filter/prioritize songs with BPM 100 to 125.
+               If "Fast", filter/prioritize songs with BPM > 125.
+            3. If Preferred Genre Filter is specified and not "All" or "Any", prioritize and include songs matching that genre if possible.
+            4. Integrate user's favorite genres/artists derived from their Taste Signature (Favorites and Recents) to bias recommendations.
+            5. Return ONLY raw JSON. Do NOT wrap in markdown block tags of any kind.
         """.trimIndent()
 
         // Build direct HTTP POST Request Body for Gemini REST v1beta manually via JSONObject
@@ -63,14 +95,14 @@ class AICopilotService {
                 put(JSONObject().apply {
                     put("parts", JSONArray().apply {
                         put(JSONObject().apply {
-                            put("text", "User prompt: '$userPrompt'")
+                            put("text", "User prompt: '$basePromptStr'")
                         })
                     })
                 })
             })
             put("generationConfig", JSONObject().apply {
                 put("responseMimeType", "application/json")
-                put("temperature", 0.7)
+                put("temperature", if (isAdventurous) 0.9 else 0.4)
             })
             put("systemInstruction", JSONObject().apply {
                 put("parts", JSONArray().apply {
@@ -136,57 +168,106 @@ class AICopilotService {
             }
         } catch (e: Exception) {
             Log.e("AICopilotService", "Gemini HTTP / parsing call failed: ${e.message}. Using offline algorithm.", e)
-            getOfflineFallbackRecommendation(userPrompt, availableSongs)
+            getOfflineFallbackRecommendation(
+                userPrompt, availableSongs, likedSongs, recentlyPlayed, selectedTheme, prefGenre, tempoFilter, isAdventurous
+            )
         }
     }
 
     private fun getOfflineFallbackRecommendation(
         userPrompt: String,
-        availableSongs: List<Song>
+        availableSongs: List<Song>,
+        likedSongs: List<Song>,
+        recentlyPlayed: List<Song>,
+        selectedTheme: String?,
+        prefGenre: String?,
+        tempoFilter: String?,
+        isAdventurous: Boolean
     ): AIDeclaredPlaylistResponse {
-        val prompt = userPrompt.lowercase()
-        val recommendedSongs = mutableListOf<String>()
-        val playlistTitle: String
-        val visualizerStyle: String
-        val commentary: String
+        var playlistTitle = "Synaptic Pulsewave Core"
+        var visualizerStyle = "Circular Wave"
+        var commentary = "Offline synapse backup loaded successfully. Deep-scanned your neural matrix database."
 
-        when {
-            prompt.contains("run") || prompt.contains("speed") || prompt.contains("highway") || prompt.contains("fast") || prompt.contains("cyberpunk") -> {
-                recommendedSongs.addAll(listOf("pulsewave_01", "pulsewave_03", "pulsewave_05"))
-                playlistTitle = "Hypergrid Cyber-Overdrive"
-                visualizerStyle = "Circular Wave"
-                commentary = "Detected hyper-kinetic adrenaline triggers. Neural system buffers override completed. Re-routing Outrun soundscapes directly to your cyber-cortex to escape law forces in Neon Sector 12. Accelerating now."
-            }
-            prompt.contains("chill") || prompt.contains("lofi") || prompt.contains("cosmic") || prompt.contains("sunset") || prompt.contains("space") -> {
-                recommendedSongs.addAll(listOf("pulsewave_02", "pulsewave_04"))
-                playlistTitle = "Starlight Gravity Drift"
-                visualizerStyle = "Neon Starburst"
-                commentary = "Cabin pressure indicators stabilized. Launching deep orbital lofi resonance patterns to match serene stellar drifts. Relax your neural implants; the code is floating under the cosmic dust."
-            }
-            prompt.contains("dark") || prompt.contains("heavy") || prompt.contains("bass") || prompt.contains("hard") || prompt.contains("glitch") -> {
-                recommendedSongs.addAll(listOf("pulsewave_03", "pulsewave_05"))
-                playlistTitle = "Sub-grid Obsidian Void"
-                visualizerStyle = "Spectrum Bars"
-                commentary = "Intense sub-bass frequencies verified in your synaptic path. Initializing deep bass boost filters and injecting high-amplitude industrial glitch blocks. Brace for heavy cyber-compression."
-            }
-            prompt.contains("rain") || prompt.contains("monsoon") || prompt.contains("lounge") || prompt.contains("retro") -> {
-                recommendedSongs.addAll(listOf("pulsewave_02", "pulsewave_06"))
-                playlistTitle = "Cassette Retro Shibuya"
-                visualizerStyle = "Line Wave"
-                commentary = "Ambient Tokyo rain detected. Initializing analog vintage cassette configurations. Savor warm retro melodies drifting through flickering hologram billboards. Cozy & code-secure."
-            }
-            else -> {
-                val shuffled = availableSongs.shuffled().take(3).map { it.id }
-                recommendedSongs.addAll(shuffled)
-                playlistTitle = "Synaptic Pulsewave Core"
-                visualizerStyle = listOf("Circular Wave", "Spectrum Bars", "Neon Starburst", "Line Wave").random()
-                commentary = "Synapses analyzed. Generating bespoke PulseWave vector stream at 60FPS. Synthesizing organic cybernetic wave models to harmonize with custom user moods."
+        // Analyze Taste Signature
+        val signatureFacts = mutableListOf<String>()
+        if (likedSongs.isNotEmpty()) {
+            val topGenre = likedSongs.groupingBy { it.genre }.eachCount().maxByOrNull { it.value }?.key
+            signatureFacts.add("your interest in $topGenre melodies")
+        }
+        if (recentlyPlayed.isNotEmpty()) {
+            signatureFacts.add("your recently audited nodes")
+        }
+
+        val habitsNotes = if (signatureFacts.isNotEmpty()) {
+            " Correlating patterns to match ${signatureFacts.joinToString(" and ")}."
+        } else {
+            " Neural buffers are clean; initializing default synthwave seed sequences."
+        }
+
+        // Start with all available songs
+        var filtered = availableSongs.toList()
+
+        // Apply Genre tuning
+        if (!prefGenre.isNullOrBlank() && prefGenre != "All" && prefGenre != "Any") {
+            val gFiltered = filtered.filter { it.genre.equals(prefGenre, ignoreCase = true) }
+            if (gFiltered.isNotEmpty() || !isAdventurous) {
+                filtered = gFiltered.ifEmpty { filtered }
             }
         }
 
+        // Apply Tempo tuning
+        if (!tempoFilter.isNullOrBlank() && tempoFilter != "All" && tempoFilter != "Any") {
+            val tFiltered = when (tempoFilter) {
+                "Slow" -> filtered.filter { it.bpm < 100 }
+                "Medium" -> filtered.filter { it.bpm in 100..125 }
+                "Fast" -> filtered.filter { it.bpm > 125 }
+                else -> filtered
+            }
+            if (tFiltered.isNotEmpty() || !isAdventurous) {
+                filtered = tFiltered.ifEmpty { filtered }
+            }
+        }
+
+        // Apply theme/prompt override
+        val prompt = (userPrompt + " " + (selectedTheme ?: "")).lowercase()
+        when {
+            selectedTheme == "workout" || prompt.contains("workout") || prompt.contains("run") || prompt.contains("speed") || prompt.contains("fast") -> {
+                // Workout theme
+                val workoutSongs = filtered.filter { it.bpm >= 120 || it.genre == "Outrun" || it.genre == "Dark Synth" || it.genre == "Synthwave" }
+                filtered = workoutSongs.ifEmpty { filtered }
+                playlistTitle = "Hypergrid Cyber-Overdrive"
+                visualizerStyle = "Circular Wave"
+                commentary = "Detected high-velocity adrenal prompts for Theme: Workout.$habitsNotes Overclocking cybergrid neural cores to feed high-tempo Outrun & Dark Synth frequencies straight to your audio deck."
+            }
+            selectedTheme == "chill" || prompt.contains("chill") || prompt.contains("lofi") || prompt.contains("atmosphere") || prompt.contains("relax") -> {
+                // Chill theme
+                val chillSongs = filtered.filter { it.bpm < 110 || it.genre == "Lofi" || it.genre == "Vaporwave" }
+                filtered = chillSongs.ifEmpty { filtered }
+                playlistTitle = "Starlight Gravity Drift"
+                visualizerStyle = "Neon Starburst"
+                commentary = "Detected solar calm triggers for Theme: Chill.$habitsNotes Routing atmospheric space-lofi feeds into your neural port. Relax your shields and float on synthetic cassette currents."
+            }
+            selectedTheme == "focus" || prompt.contains("focus") || prompt.contains("study") || prompt.contains("ambient") || prompt.contains("concentration") -> {
+                // Focus theme
+                val focusSongs = filtered.filter { it.genre == "Lofi" || it.genre == "Retrowave" || it.genre == "Synthwave" }
+                filtered = focusSongs.ifEmpty { filtered }
+                playlistTitle = "Deep Cyberdeck Focus Grid"
+                visualizerStyle = "Line Wave"
+                commentary = "Detected focusing terminal logs for Theme: Focus.$habitsNotes Engaging high-concentration sound wave mapping. Filtering out high-frequency noise elements to elevate mental productivity."
+            }
+            else -> {
+                playlistTitle = "Bespoke Taste Alignment"
+                visualizerStyle = "Spectrum Bars"
+                commentary = "Analyzed customized fine-tuning filters.$habitsNotes Generating tailored frequencies matching your unique spectrum filter. Secure connection complete."
+            }
+        }
+
+        // Return up to 4 song IDs
+        val recommendedSongIds = filtered.shuffled().take(4).map { it.id }.ifEmpty { listOf("pulsewave_01") }
+
         return AIDeclaredPlaylistResponse(
             commentary = commentary,
-            recommendedSongIds = recommendedSongs,
+            recommendedSongIds = recommendedSongIds,
             aiPlaylistTitle = playlistTitle,
             recommendedVisualizerStyle = visualizerStyle
         )
