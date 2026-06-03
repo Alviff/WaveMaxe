@@ -172,6 +172,110 @@ fun AICopilotScreen(
             }
         }
 
+        // Section: "Quick-start Chill Vibes Generator" based on low-tempo taste profiles
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                CyberCyan.copy(alpha = 0.15f),
+                                NeonPink.copy(alpha = 0.05f)
+                            )
+                        )
+                    )
+                    .border(
+                        1.2.dp,
+                        Brush.horizontalGradient(
+                            colors = listOf(CyberCyan.copy(alpha = 0.6f), Color.Transparent)
+                        ),
+                        RoundedCornerShape(16.dp)
+                    )
+                    .padding(14.dp)
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.CloudQueue,
+                                contentDescription = "Chill Impulse",
+                                tint = CyberCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "AUTOMATED CHILL VECTOR ACTIVE",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                        }
+                        
+                        Badge(containerColor = CyberCyan.copy(alpha = 0.2f)) {
+                            Text(
+                                text = "LOW-TEMPO ALIGNED",
+                                color = CyberCyan,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "PulseWave neural cores identified ambient, tranquil frequencies (~85-100 BPM) in your listening database. Tap to instantly curate a custom 'Chill Vibes' matrix.",
+                        color = MutedText,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = {
+                            onSelectTheme("chill")
+                            onTempoChange("Slow")
+                            onPromptChange("Generate a personalized 'Chill Vibes' playlist based on recent low-tempo listening history and mood waves.")
+                            onSubmitPrompt()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = "Generate",
+                                tint = Color.Black,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "GENERATE 'CHILL VIBES'",
+                                color = Color.Black,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Section: Themed Mudulators (Workout, Chill, Focus)
         item {
             Column {
