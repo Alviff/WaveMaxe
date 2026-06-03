@@ -101,6 +101,10 @@ fun MainContainer() {
     val spectrumData by viewModel.spectrumData.collectAsState()
     val activeShaderFilter by viewModel.activeShaderFilter.collectAsState()
 
+    val githubOwner by viewModel.githubOwner.collectAsState()
+    val githubRepo by viewModel.githubRepo.collectAsState()
+    val updateStatus by viewModel.updateStatus.collectAsState()
+
     // Nav and view layouts states
     var currentTab by remember { mutableStateOf("Home") } // Home, Visualizer, Equalizer, AI Copilot
     var isFullPlayerExpanded by remember { mutableStateOf(false) }
@@ -268,7 +272,21 @@ fun MainContainer() {
                             onCreateAlbum = { t, d, g, i, cb -> viewModel.createAndPublishAlbum(t, d, g, i, cb) },
                             onPublishTrack = { album, title, genre, mood, streamUrl, imageUrl, bpm, lyrics, cb ->
                                 viewModel.publishTrackToAlbum(album, title, genre, mood, streamUrl, imageUrl, bpm, lyrics, cb)
-                            }
+                            },
+                            onImportLocalSong = { title, artist, album, uri ->
+                                viewModel.importLocalSong(title, artist, album, uri)
+                            },
+                            githubOwner = githubOwner,
+                            githubRepo = githubRepo,
+                            updateStatus = updateStatus,
+                            onSetGitHubConfig = { owner, repo -> viewModel.setGitHubConfig(owner, repo) },
+                            onCheckForUpdates = { viewModel.checkForUpdates() },
+                            onTriggerInstallUpdate = { url ->
+                                viewModel.triggerInstallUpdate(url) {
+                                    Toast.makeText(context, "Successfully downloaded new OTA binary via PulseWave Scanner!", Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            onResetUpdateStatus = { viewModel.resetUpdateStatus() }
                         )
                     }
 

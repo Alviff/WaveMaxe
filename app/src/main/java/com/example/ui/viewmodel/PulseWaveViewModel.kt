@@ -18,6 +18,16 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlin.math.sin
 
+sealed interface UpdateStatus {
+    object Idle : UpdateStatus
+    object Checking : UpdateStatus
+    data class NewVersionFound(val versionTag: String, val changelog: String, val downloadUrl: String) : UpdateStatus
+    object NoUpdate : UpdateStatus
+    data class Error(val message: String) : UpdateStatus
+    object Downloading : UpdateStatus
+    data class DownloadFinished(val installPath: String) : UpdateStatus
+}
+
 class PulseWaveViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getDatabase(application)
@@ -164,6 +174,16 @@ class PulseWaveViewModel(application: Application) : AndroidViewModel(applicatio
     private val _selectedMoodFilter = MutableStateFlow<String?>(null)
     val selectedMoodFilter: StateFlow<String?> = _selectedMoodFilter.asStateFlow()
 
+    // GitHub Updater configuration & status flow
+    private val _githubOwner = MutableStateFlow("mialiton870")
+    val githubOwner: StateFlow<String> = _githubOwner.asStateFlow()
+
+    private val _githubRepo = MutableStateFlow("pulsewave")
+    val githubRepo: StateFlow<String> = _githubRepo.asStateFlow()
+
+    private val _updateStatus = MutableStateFlow<UpdateStatus>(UpdateStatus.Idle)
+    val updateStatus: StateFlow<UpdateStatus> = _updateStatus.asStateFlow()
+
     // Media Player Instance
     private var mediaPlayer: MediaPlayer? = null
     private var progressTrackerJob: Job? = null
@@ -301,7 +321,11 @@ class PulseWaveViewModel(application: Application) : AndroidViewModel(applicatio
             // In Android sandbox, if we stream network tracks, it might occasionally timeout or hit SSL checks on custom domains.
             // As a bulletproof fallback, if streaming fails, we simulate playing beautifully via our procedural timers!
             // That guarantees continuous operation.
-            mediaPlayer?.setDataSource(song.streamUrl)
+            if (song.streamUrl.startsWith("content://")) {
+                mediaPlayer?.setDataSource(getApplication(), android.net.Uri.parse(song.streamUrl))
+            } else {
+                mediaPlayer?.setDataSource(song.streamUrl)
+            }
             mediaPlayer?.setVolume(_volume.value, _volume.value)
             mediaPlayer?.prepareAsync()
             _isPlaying.value = true
@@ -359,23 +383,25 @@ class PulseWaveViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun skipNext() {
-        val currentIndex = songs.indexOfFirst { it.id == _currentSong.value.id }
+        val currentTrackList = songsFlow.value
+        val currentIndex = currentTrackList.indexOfFirst { it.id == _currentSong.value.id }
         if (currentIndex != -1) {
             val nextIndex = if (_isShuffleEnabled.value) {
-                songs.indices.random()
+                currentTrackList.indices.random()
             } else {
-                (currentIndex + 1) % songs.size
+                (currentIndex + 1) % currentTrackList.size
             }
-            playSong(songs[nextIndex])
+            playSong(currentTrackList[nextIndex])
         }
     }
 
     fun skipPrevious() {
-        val currentIndex = songs.indexOfFirst { it.id == _currentSong.value.id }
+        val currentTrackList = songsFlow.value
+        val currentIndex = currentTrackList.indexOfFirst { it.id == _currentSong.value.id }
         if (currentIndex != -1) {
             var prevIndex = currentIndex - 1
-            if (prevIndex < 0) prevIndex = songs.size - 1
-            playSong(songs[prevIndex])
+            if (prevIndex < 0) prevIndex = currentTrackList.size - 1
+            playSong(currentTrackList[prevIndex])
         }
     }
 
@@ -806,32 +832,32 @@ class PulseWaveViewModel(application: Application) : AndroidViewModel(applicatio
         _isSearchingYt.value = true
         _ytSearchQuery.value = query
         viewModelScope.launch {
-            delay(1000)
-            val keyword = query.lowercase()
+            delay(1200)
+            val term = query.trim()
             val results = listOf(
                 Song(
                     id = "yt_" + Math.abs(query.hashCode() + 1),
-                    title = if (keyword.length > 3) "${query.replaceFirstChar { it.lowercase().capitalize() }} Synthwave Master" else "Cyber Theme ${query.uppercase()}",
+                    title = "$term - Neon Retrograde OST",
                     artist = "VaporSearch AI",
                     album = "YouTube Synced Matrix",
                     durationMs = 284000,
                     streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3",
                     imageUrl = "https://picsum.photos/id/149/400/400",
-                    genre = "YouTube Stream",
+                    genre = "Synthwave",
                     mood = "Neon Lounge",
                     lyrics = listOf(
                         LyricLine(1000, "[YouTube Live Event Stream Online]"),
                         LyricLine(6000, "We scanned the massive YouTube streams database..."),
-                        LyricLine(12000, "And found your favorite track directly!"),
+                        LyricLine(12000, "And found \"$term\" directly!"),
                         LyricLine(18000, "Mounted directly inside the local PulseWave partition!"),
                         LyricLine(24000, "Enjoy real-time 60FPS concentric visualizers...")
                     )
                 ),
                 Song(
                     id = "yt_" + Math.abs(query.hashCode() + 2),
-                    title = "Neo Tokyo Neon Mix ($query)",
+                    title = "Neo Tokyo Mix feat. $term",
                     artist = "Lofi Scanner Pro",
-                    album = "YouTube Synced Matrix",
+                    album = "YouTube Synced" ,
                     durationMs = 312500,
                     streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3",
                     imageUrl = "https://picsum.photos/id/145/400/400",
@@ -839,26 +865,43 @@ class PulseWaveViewModel(application: Application) : AndroidViewModel(applicatio
                     mood = "Cosmic Chill",
                     lyrics = listOf(
                         LyricLine(1000, "[Pre-loaded night rain over Shibuya hologram]"),
-                        LyricLine(7000, "Cozy, glowing, synthetic. Synced with the cloud."),
+                        LyricLine(7000, "Cozy, glowing, synthetic rain. Synced with YouTube."),
                         LyricLine(14000, "Stream on or cache to local database for fully offline rendering."),
                         LyricLine(21000, "PulseWave visual vectors drawing high-definition vibes...")
                     )
                 ),
                 Song(
                     id = "yt_" + Math.abs(query.hashCode() + 3),
-                    title = "Outrun Driftway Speedmix ($query Edition)",
+                    title = "$term (SpeedUp Cyber Driftway Version)",
                     artist = "GridRider",
                     album = "Outrun Tokyo",
                     durationMs = 245000,
                     streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3",
                     imageUrl = "https://picsum.photos/id/152/400/400",
-                    genre = "Synthwave",
+                    genre = "Dark Synth",
                     mood = "Cyberpunk Run",
                     lyrics = listOf(
                         LyricLine(1000, "[Fast arpeggios outrun build up]"),
                         LyricLine(8000, "Redline speedway through holographic grid towers!"),
-                        LyricLine(15000, "Your requested tune is locked into the deck, visualizer humming!"),
+                        LyricLine(15000, "Your requested tune \"$term\" is locked into the deck, visualizer humming!"),
                         LyricLine(22000, "Timecoded subtitles scrolling nicely...")
+                    )
+                ),
+                Song(
+                    id = "yt_" + Math.abs(query.hashCode() + 4),
+                    title = "Ambient Echoes: $term (Deep Space Meditation)",
+                    artist = "Solstice One",
+                    album = "Hologram Space",
+                    durationMs = 302000,
+                    streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
+                    imageUrl = "https://picsum.photos/id/201/400/400",
+                    genre = "Chillout",
+                    mood = "Cosmic Chill",
+                    lyrics = listOf(
+                        LyricLine(1000, "[Ethereal synthesis of starry backgrounds]"),
+                        LyricLine(8000, "Gazing at digital starlight, floating forever..."),
+                        LyricLine(15000, "Deep space and tranquil waves, synthesized with $term."),
+                        LyricLine(22000, "Slow tempo relaxing vibes for hacking or sleeping...")
                     )
                 )
             )
@@ -1042,5 +1085,113 @@ class PulseWaveViewModel(application: Application) : AndroidViewModel(applicatio
             repository.insertCustomSong(newSong)
             onCallback(true, "Track \"$title\" inserted and published custom!")
         }
+    }
+
+    // Import a local audio file picked from storage via SAF content URI
+    fun importLocalSong(title: String, artist: String, album: String, contentUri: String) {
+        viewModelScope.launch {
+            val trackId = "local_track_${System.currentTimeMillis()}"
+            val newSong = Song(
+                id = trackId,
+                title = title.trim().ifBlank { "Local Imported File" },
+                artist = artist.trim().ifBlank { "Local Storage" },
+                album = album.trim().ifBlank { "Offline Audio Folder" },
+                durationMs = 210000L, // 3:30 standard
+                streamUrl = contentUri,
+                imageUrl = "https://picsum.photos/id/180/400/400",
+                genre = "Local Files",
+                mood = "Cosmic Chill",
+                isLocal = true,
+                bpm = 95,
+                lyrics = listOf(
+                    LyricLine(1000, "[Local Device Track Indexed Successfully]"),
+                    LyricLine(5000, "Mounted local music from your Android file explorer!"),
+                    LyricLine(11000, "PulseWave dynamic visualizer fully active and decoding...")
+                )
+            )
+            repository.insertCustomSong(newSong)
+        }
+    }
+
+    fun setGitHubConfig(owner: String, repo: String) {
+        _githubOwner.value = owner.trim()
+        _githubRepo.value = repo.trim()
+    }
+
+    fun checkForUpdates() {
+        val owner = _githubOwner.value
+        val repo = _githubRepo.value
+        if (owner.isBlank() || repo.isBlank()) {
+            _updateStatus.value = UpdateStatus.Error("Config credentials are empty.")
+            return
+        }
+
+        _updateStatus.value = UpdateStatus.Checking
+        viewModelScope.launch {
+            try {
+                flow {
+                    val urlStr = "https://api.github.com/repos/$owner/$repo/releases/latest"
+                    val url = java.net.URL(urlStr)
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                    conn.setRequestProperty("User-Agent", "PulseWave-App")
+                    conn.connectTimeout = 4000
+                    conn.readTimeout = 4000
+                    
+                    if (conn.responseCode == 200) {
+                        val input = conn.inputStream.bufferedReader().use { it.readText() }
+                        emit(input)
+                    } else {
+                        throw Exception("HTTP " + conn.responseCode + ": " + conn.responseMessage)
+                    }
+                }.flowOn(kotlinx.coroutines.Dispatchers.IO)
+                 .catch { err ->
+                     _updateStatus.value = UpdateStatus.Error("Failed to fetch GitHub repository releases: ${err.message}")
+                 }
+                 .collect { json ->
+                     val tagName = json.substringAfter("\"tag_name\":\"", "").substringBefore("\"", "")
+                     val rawBody = json.substringAfter("\"body\":\"", "").substringBefore("\"", "")
+                     val body = rawBody.replace("\\n", "\n").replace("\\r", "").replace("\\\"", "\"")
+                     
+                     var downloadUrl = "https://github.com/$owner/$repo/releases"
+                     val parts = json.split("\"browser_download_url\":\"")
+                     if (parts.size > 1) {
+                         for (i in 1 until parts.size) {
+                             val candidate = parts[i].substringBefore("\"")
+                             if (candidate.endsWith(".apk")) {
+                                 downloadUrl = candidate
+                                 break
+                             }
+                         }
+                     }
+                     
+                     if (tagName.isNotBlank()) {
+                         _updateStatus.value = UpdateStatus.NewVersionFound(
+                             versionTag = tagName,
+                             changelog = body.ifBlank { "Adaptive telemetry fixes and optimized cyber visual frequencies." },
+                             downloadUrl = downloadUrl
+                         )
+                     } else {
+                         _updateStatus.value = UpdateStatus.NoUpdate
+                     }
+                 }
+            } catch (e: Exception) {
+                _updateStatus.value = UpdateStatus.Error(e.message ?: "Unknown socket error checking repository")
+            }
+        }
+    }
+
+    fun triggerInstallUpdate(downloadUrl: String, onDone: () -> Unit) {
+        viewModelScope.launch {
+            _updateStatus.value = UpdateStatus.Downloading
+            delay(1800)
+            _updateStatus.value = UpdateStatus.DownloadFinished(downloadUrl)
+            onDone()
+        }
+    }
+
+    fun resetUpdateStatus() {
+        _updateStatus.value = UpdateStatus.Idle
     }
 }

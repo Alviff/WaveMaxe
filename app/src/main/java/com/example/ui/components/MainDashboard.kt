@@ -35,6 +35,11 @@ import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
 import com.example.data.model.PlaylistEntity
 import com.example.data.model.Song
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.provider.OpenableColumns
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import com.example.ui.theme.*
 
 @Composable
@@ -67,6 +72,14 @@ fun MainDashboard(
     onLogout: () -> Unit = {},
     onCreateAlbum: (title: String, description: String, genre: String, imageUrl: String, (Boolean, String) -> Unit) -> Unit = { _, _, _, _, _ -> },
     onPublishTrack: (album: com.example.data.model.UserAlbumEntity, title: String, genre: String, mood: String, streamUrl: String, imageUrl: String, bpm: Int, lyrics: String, (Boolean, String) -> Unit) -> Unit = { _, _, _, _, _, _, _, _, _ -> },
+    onImportLocalSong: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+    githubOwner: String = "",
+    githubRepo: String = "",
+    updateStatus: com.example.ui.viewmodel.UpdateStatus = com.example.ui.viewmodel.UpdateStatus.Idle,
+    onSetGitHubConfig: (String, String) -> Unit = { _, _ -> },
+    onCheckForUpdates: () -> Unit = {},
+    onTriggerInstallUpdate: (String) -> Unit = {},
+    onResetUpdateStatus: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val moods = listOf("Cyberpunk Run", "Neon Lounge", "Cosmic Chill", "Dark Synth", "Retro Town")
@@ -83,6 +96,34 @@ fun MainDashboard(
 
     // Playlist selector modal states for adding a song
     var selectedSongForPlaylistAdd by remember { mutableStateOf<Song?>(null) }
+
+    // GitHub Self-Updater Dialog state
+    var showUpdaterDialog by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    
+    // SAF Document Picker contract
+    val pickAudioLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            uris.forEach { uri ->
+                var displayName = "Offline Audio Track"
+                try {
+                    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1 && cursor.moveToFirst()) {
+                            displayName = cursor.getString(nameIndex)
+                        }
+                    }
+                } catch (e: Exception) {}
+                
+                val titleNoExt = displayName.substringBeforeLast(".")
+                onImportLocalSong(titleNoExt, "Local Folder", "Audio Stream", uri.toString())
+            }
+            Toast.makeText(context, "${uris.size} path file(s) mounted cleanly to the cyberdeck database!", Toast.LENGTH_LONG).show()
+        }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -136,9 +177,24 @@ fun MainDashboard(
                     }
                 }
 
-                // Profile connection badge or avatar
-                if (currentUser != null) {
-                    val badgeColor = remember(currentUser.avatarColor) {
+                // Profile connection badge and GitHub Update Trigger
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { showUpdaterDialog = true },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .padding(end = 6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.CloudSync,
+                            contentDescription = "Check GitHub OTA Updates",
+                            tint = NeonPink,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    if (currentUser != null) {
+                        val badgeColor = remember(currentUser.avatarColor) {
                         try {
                             Color(android.graphics.Color.parseColor(currentUser.avatarColor))
                         } catch (e: Exception) {
@@ -197,9 +253,10 @@ fun MainDashboard(
                 }
             }
         }
+    }
 
-        // Cyber Glowing Outlined Search Bar
-        item {
+    // Cyber Glowing Outlined Search Bar
+    item {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchChange,
@@ -480,14 +537,43 @@ fun MainDashboard(
 
         // Primary Song directory directory
         item {
-            Text(
-                text = "PULSE AUDIO FILES",
-                color = MutedText,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.5.sp,
-                modifier = Modifier.padding(bottom = 10.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "PULSE AUDIO FILES",
+                    color = MutedText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+                
+                Button(
+                    onClick = { pickAudioLauncher.launch(arrayOf("audio/*")) },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan.copy(alpha = 0.15f)),
+                    border = BorderStroke(1.dp, CyberCyan),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.FolderOpen,
+                        contentDescription = "Import From Device Folder",
+                        tint = CyberCyan,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        "IMPORT FILES",
+                        color = CyberCyan,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
         }
 
         // Song vertical lists
@@ -876,6 +962,216 @@ fun MainDashboard(
                         modifier = Modifier.align(Alignment.End)
                     ) {
                         Text("CLOSE", color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showUpdaterDialog) {
+        Dialog(
+            onDismissRequest = { 
+                showUpdaterDialog = false 
+                onResetUpdateStatus()
+            }
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .wrapContentHeight()
+                    .border(1.dp, NeonPink, RoundedCornerShape(20.dp)),
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF0C0C14)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    ) {
+                        Icon(Icons.Default.CloudSync, contentDescription = null, tint = NeonPink, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            "CYBER GITHUB INJECTOR",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 1.5.sp
+                        )
+                    }
+
+                    Text(
+                        text = "Configure target GitHub repository to check for updates and download custom APK binaries offline.",
+                        color = MutedText,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 16.dp),
+                        lineHeight = 15.sp
+                    )
+
+                    var ownerVal by remember { mutableStateOf(githubOwner) }
+                    var repoVal by remember { mutableStateOf(githubRepo) }
+
+                    OutlinedTextField(
+                        value = ownerVal,
+                        onValueChange = { ownerVal = it },
+                        label = { Text("GITHUB REPO OWNER", color = CyberCyan, fontSize = 10.sp) },
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = CyberCyan, unfocusedBorderColor = GlassBorder),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = repoVal,
+                        onValueChange = { repoVal = it },
+                        label = { Text("REPOSITORY NAME", color = NeonPink, fontSize = 10.sp) },
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = NeonPink, unfocusedBorderColor = GlassBorder),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = { 
+                                onSetGitHubConfig(ownerVal, repoVal)
+                                onCheckForUpdates()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonPink),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("SCAN FOR BINARY", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = { 
+                                showUpdaterDialog = false 
+                                onResetUpdateStatus()
+                            },
+                            border = BorderStroke(1.dp, GlassBorder),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(0.8f)
+                        ) {
+                            Text("CLOSE", color = MutedText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(CyberDarkSurface)
+                            .border(1.dp, DividerColor, RoundedCornerShape(12.dp))
+                            .padding(14.dp)
+                    ) {
+                        when (updateStatus) {
+                            is com.example.ui.viewmodel.UpdateStatus.Idle -> {
+                                Text(
+                                    text = "Status: Configured Cluster Ready to Broadcast...",
+                                    color = MutedText,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            is com.example.ui.viewmodel.UpdateStatus.Checking -> {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = CyberCyan, strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "Querying github.api database...",
+                                        color = CyberCyan,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                            is com.example.ui.viewmodel.UpdateStatus.NoUpdate -> {
+                                Text(
+                                    text = "No new binary release found. Currently in terminal coherence! (Internal v3.5 is the latest)",
+                                    color = NeonGreen,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            is com.example.ui.viewmodel.UpdateStatus.Error -> {
+                                Text(
+                                    text = "Error: ${(updateStatus as com.example.ui.viewmodel.UpdateStatus.Error).message}",
+                                    color = Color.Red,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            is com.example.ui.viewmodel.UpdateStatus.NewVersionFound -> {
+                                val version = (updateStatus as com.example.ui.viewmodel.UpdateStatus.NewVersionFound).versionTag
+                                val changelog = (updateStatus as com.example.ui.viewmodel.UpdateStatus.NewVersionFound).changelog
+                                val url = (updateStatus as com.example.ui.viewmodel.UpdateStatus.NewVersionFound).downloadUrl
+
+                                Column {
+                                    Text(
+                                        text = "NEW GENESIS INJECTOR FOUND!",
+                                        color = NeonGreen,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        text = "Version: $version",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "Changelog: $changelog",
+                                        color = MutedText,
+                                        fontSize = 10.sp,
+                                        maxLines = 3,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    
+                                    Button(
+                                        onClick = { onTriggerInstallUpdate(url) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = NeonGreen),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                    ) {
+                                        Text("DOWNLOAD & APPLY UPDATE", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                            is com.example.ui.viewmodel.UpdateStatus.Downloading -> {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    LinearProgressIndicator(color = NeonPink, modifier = Modifier.fillMaxWidth().height(4.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Infiltrating download streams... 68%",
+                                        color = NeonPink,
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                            is com.example.ui.viewmodel.UpdateStatus.DownloadFinished -> {
+                                Text(
+                                    text = "Upgrade complete. GITHUB OTA APK installation initialized!",
+                                    color = CyberCyan,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
                     }
                 }
             }
